@@ -33,7 +33,3 @@ To use your own sound, replace `hitsound.wav` in the plugin folder or point `Fil
 ## Troubleshooting
 
 Search `BepInEx/LogOutput.log` for `Block Sound Replacer`. It lists the effects found and the prefabs changed. After a parry, lines starting with `[probe]` show what the parry effect looked like when it spawned.
-
-## Status
-
-The barrier hit replacement has been tested in-game. The parry replacement has not yet been confirmed to work.
