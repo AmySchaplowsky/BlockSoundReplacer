@@ -10,7 +10,7 @@ using UnityEngine.Networking;
 
 namespace BlockSoundReplacer
 {
-    [BepInPlugin(GUID, "Block Sound Replacer", "0.4.0")]
+    [BepInPlugin(GUID, "Block Sound Replacer", "0.5.0")]
     public class Plugin : BaseUnityPlugin
     {
         public const string GUID = "local.blocksoundreplacer";
@@ -22,9 +22,18 @@ namespace BlockSoundReplacer
         internal static ConfigEntry<bool> ReplaceParry;
         internal static ConfigEntry<bool> ReplaceBarrierHit;
         internal static ConfigEntry<bool> DirectPlayback;
+        internal static ConfigEntry<float> Volume;
 
         private readonly HashSet<GameObject> _done = new HashSet<GameObject>();
         private readonly HashSet<string> _seen = new HashSet<string>();
+
+        // Prefabs replaced through the game's own sound component (barrier): volume is scaled at prefab level.
+        private readonly List<GameObject> _zsfxPrefabs = new List<GameObject>();
+        private readonly Dictionary<ZSFX, float[]> _zsfxBase = new Dictionary<ZSFX, float[]>();
+        private const BindingFlags AnyInstance = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
+        private static readonly FieldInfo MinVol = typeof(ZSFX).GetField("m_minVol", AnyInstance);
+        private static readonly FieldInfo MaxVol = typeof(ZSFX).GetField("m_maxVol", AnyInstance);
+        private float _lastVolume = -1f;
 
         internal static void Log(string msg) { Instance.Logger.LogInfo(msg); }
 
@@ -36,10 +45,38 @@ namespace BlockSoundReplacer
             ReplaceParry = Config.Bind("General", "ReplaceParry", true, "Replace the parry / perfect-block sound.");
             ReplaceBarrierHit = Config.Bind("General", "ReplaceBarrierHit", true, "Replace the Staff of Protection barrier hit sound.");
 
+            Volume = Config.Bind("General", "Volume", 1f,
+                new ConfigDescription("Volume of the replaced sounds. 0 = silent, 1 = full.", new AcceptableValueRange<float>(0f, 1f)));
             DirectPlayback = Config.Bind("General", "DirectPlayback", true, "Play the clip through our own AudioSource when a replaced effect spawns, and mute the original sound.");
+
+            if (MinVol == null || MaxVol == null)
+                Logger.LogWarning("ZSFX volume fields (m_minVol/m_maxVol) not found; barrier volume relies on AudioSource volume only.");
 
             StartCoroutine(LoadClip());
             StartCoroutine(Watch());
+        }
+
+        // Apply slider changes immediately, including while the game is running.
+        private void Update()
+        {
+            if (Volume.Value != _lastVolume) { _lastVolume = Volume.Value; ApplyVolume(); }
+        }
+
+        private void ApplyVolume()
+        {
+            float v = Mathf.Clamp01(Volume.Value);
+            foreach (var prefab in _zsfxPrefabs)
+            {
+                if (prefab == null) continue;
+                foreach (var src in prefab.GetComponentsInChildren<AudioSource>(true)) src.volume = v;
+                foreach (var zs in prefab.GetComponentsInChildren<ZSFX>(true))
+                {
+                    float[] b;
+                    if (!_zsfxBase.TryGetValue(zs, out b)) continue;
+                    if (MinVol != null) MinVol.SetValue(zs, b[0] * v);
+                    if (MaxVol != null) MaxVol.SetValue(zs, b[1] * v);
+                }
+            }
         }
 
 
@@ -171,8 +208,19 @@ namespace BlockSoundReplacer
         {
             if (!_done.Add(prefab)) return true;
             int sfx = 0, sources = 0;
-            foreach (var zs in prefab.GetComponentsInChildren<ZSFX>(true)) { zs.m_audioClips = new[] { Clip }; sfx++; }
-            foreach (var src in prefab.GetComponentsInChildren<AudioSource>(true)) { src.clip = Clip; if (!direct) src.volume = 1f; sources++; }
+            foreach (var zs in prefab.GetComponentsInChildren<ZSFX>(true))
+            {
+                zs.m_audioClips = new[] { Clip };
+                if (!direct && !_zsfxBase.ContainsKey(zs))
+                    _zsfxBase[zs] = new[] { MinVol != null ? (float)MinVol.GetValue(zs) : 1f, MaxVol != null ? (float)MaxVol.GetValue(zs) : 1f };
+                sfx++;
+            }
+            foreach (var src in prefab.GetComponentsInChildren<AudioSource>(true)) { src.clip = Clip; sources++; }
+            if (!direct)
+            {
+                if (!_zsfxPrefabs.Contains(prefab)) _zsfxPrefabs.Add(prefab);
+                ApplyVolume();
+            }
             Logger.LogInfo("  " + where + " -> prefab '" + prefab.name + "': " + sfx + " ZSFX, " + sources + " AudioSource");
             if (direct && sfx + sources > 0 && prefab.GetComponent<EffectProbe>() == null)
             {
@@ -205,7 +253,7 @@ namespace BlockSoundReplacer
             var src = go.AddComponent<AudioSource>();
             src.playOnAwake = false;
             src.clip = Plugin.Clip;
-            src.volume = 1f;
+            src.volume = Mathf.Clamp01(Plugin.Volume.Value);
             if (template != null)
             {
                 src.outputAudioMixerGroup = template.outputAudioMixerGroup;

@@ -19,6 +19,7 @@ Install through your mod manager, or copy `BlockSoundReplacer.dll` and `hitsound
 | ReplaceBarrierHit | true | Replace the Staff of Protection barrier hit sound |
 | ReplaceParry | true | Replace the parry / perfect-block sound |
 | ReplaceBlock | false | Replace the normal block sound |
+| Volume | 1.0 | Volume of the replaced sounds, from 0 (silent) to 1 (full). Changes apply while the game is running if you use a configuration manager |
 | DirectPlayback | true | Play the clip through its own audio source for parry/block effects |
 | FileName | hitsound.wav | Audio file next to the DLL (WAV or OGG) |
 
