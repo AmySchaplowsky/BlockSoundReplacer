@@ -1,0 +1,9 @@
+﻿{
+  "name": "BlockSoundReplacer",
+  "version_number": "0.4.0",
+  "website_url": "https://github.com/AmySchaplowsky/BlockSoundReplacer",
+  "description": "Replaces the Staff of Protection barrier hit sound and the parry (perfect block) sound with a custom clip. Client-side.",
+  "dependencies": [
+    "denikson-BepInExPack_Valheim-5.4.2351"
+  ]
+}
